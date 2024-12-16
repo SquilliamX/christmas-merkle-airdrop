@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Script} from "forge-std/Script.sol";
-import {stdJson} from "forge-std/StdJson.sol";
-import {console} from "forge-std/console.sol";
-import {Merkle} from "murky/src/Merkle.sol";
-import {ScriptHelper} from "murky/script/common/ScriptHelper.sol";
+import { Script } from "forge-std/Script.sol";
+import { stdJson } from "forge-std/StdJson.sol";
+import { console } from "forge-std/console.sol";
+import { Merkle } from "murky/src/Merkle.sol";
+import { ScriptHelper } from "murky/script/common/ScriptHelper.sol";
 
 // Merkle proof generator script
 // To use:
@@ -30,7 +30,8 @@ contract MakeMerkle is Script, ScriptHelper {
     string private outputPath = "/script/target/output.json";
 
     string private elements = vm.readFile(string.concat(vm.projectRoot(), inputPath)); // get the absolute path
-    string[] private types = elements.readStringArray(".types"); // gets the merkle tree leaf types from json using forge standard lib cheatcode
+    string[] private types = elements.readStringArray(".types"); // gets the merkle tree leaf types from json using
+        // forge standard lib cheatcode
     uint256 private count = elements.readUint(".count"); // get the number of leaf nodes
 
     // make three arrays the same size as the number of leaf nodes
@@ -48,7 +49,12 @@ contract MakeMerkle is Script, ScriptHelper {
     }
 
     /// @dev Generate the JSON entries for the output file
-    function generateJsonEntries(string memory _inputs, string memory _proof, string memory _root, string memory _leaf)
+    function generateJsonEntries(
+        string memory _inputs,
+        string memory _proof,
+        string memory _root,
+        string memory _leaf
+    )
         internal
         pure
         returns (string memory)
@@ -84,7 +90,8 @@ contract MakeMerkle is Script, ScriptHelper {
             for (uint256 j = 0; j < types.length; ++j) {
                 if (compareStrings(types[j], "address")) {
                     address value = elements.readAddress(getValuesByIndex(i, j));
-                    // you can't immediately cast straight to 32 bytes as an address is 20 bytes so first cast to uint160 (20 bytes) cast up to uint256 which is 32 bytes and finally to bytes32
+                    // you can't immediately cast straight to 32 bytes as an address is 20 bytes so first cast to
+                    // uint160 (20 bytes) cast up to uint256 which is 32 bytes and finally to bytes32
                     data[j] = bytes32(uint256(uint160(value)));
                     input[j] = vm.toString(value);
                 } else if (compareStrings(types[j], "uint")) {
