@@ -28,6 +28,8 @@ contract MerkleAirDropUnitTest is Test {
     address user;
     uint256 userPrivateKey;
 
+    address public gasPayer;
+
     // Setup function that runs before each test
     function setUp() public {
         // Deploy a new ChristmasToken contract
@@ -41,17 +43,21 @@ contract MerkleAirDropUnitTest is Test {
         // Create a test user address and private key using Forge's makeAddrAndKey cheatcode
         (user, userPrivateKey) = makeAddrAndKey("user");
         user = address(0x6CA6d1e2D5347Bfab1d91e883F1915560e09129D);
+        gasPayer = makeAddr("gasPayer");
     }
 
     // Test function to verify users can claim their tokens
-    function testUsersCanClaim() public {
+    function testUsersCanClaimIntegrations() public {
         // Get the user's initial token balance
         uint256 startingBalance = token.balanceOf(user);
 
-        // Impersonate the user address for the next transaction
-        vm.prank(user);
+        bytes32 digest = airdrop.getMessageHash(user, AMOUNT_TO_CLAIM);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(userPrivateKey, digest);
+
+        vm.prank(gasPayer);
         // Attempt to claim tokens with the user's address, amount, and merkle proof
-        airdrop.claim(user, AMOUNT_TO_CLAIM, PROOF);
+        airdrop.claim(user, AMOUNT_TO_CLAIM, PROOF, v, r, s);
 
         // Get the user's final token balance
         uint256 endingBalance = token.balanceOf(user);

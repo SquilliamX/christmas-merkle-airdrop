@@ -6,7 +6,7 @@ import { Test, console } from "forge-std/Test.sol";
 import { MerkleAirdrop } from "../../src/MerkleAirdrop.sol";
 import { ChristmasToken } from "../../src/ChristmasToken.sol";
 import { ZkSyncChainChecker } from "lib/foundry-devops/src/ZkSyncChainChecker.sol";
-import { DeployMerkleAirDrop } from "script/DeployMerkleAirdrop.s.sol";
+import { DeployMerkleAirdrop } from "script/DeployMerkleAirdrop.s.sol";
 
 contract MerkleAirDropIntegrationsTest is ZkSyncChainChecker, Test {
     // Declare state variables for the contracts we'll be testing
@@ -26,6 +26,9 @@ contract MerkleAirDropIntegrationsTest is ZkSyncChainChecker, Test {
     bytes32 proofTwo = 0xe5ebd1e1b5a5478a944ecab36a9a954ac3b6b8216875f6524caa7a1d87096576;
     // Array containing the proof hashes needed to verify the claim
     bytes32[] public PROOF = [proofOne, proofTwo];
+
+    address public gasPayer;
+
     // Variables to store the test user's address and private key
     address user;
     uint256 userPrivateKey;
@@ -35,7 +38,7 @@ contract MerkleAirDropIntegrationsTest is ZkSyncChainChecker, Test {
         // if not zksync, then deploy with deployment script, if we are on ZkSync, continue
         if (!isZkSyncChain()) {
             // create new instance of the deployment contract script
-            DeployMerkleAirDrop deployer = new DeployMerkleAirDrop();
+            DeployMerkleAirdrop deployer = new DeployMerkleAirdrop();
             // save the airdrop and token contracts & addresses that the deployment script `run` function returns
             (airdrop, token) = deployer.run();
         } else {
@@ -50,7 +53,7 @@ contract MerkleAirDropIntegrationsTest is ZkSyncChainChecker, Test {
         }
         // Create a test user address and private key using Forge's makeAddrAndKey cheatcode
         (user, userPrivateKey) = makeAddrAndKey("user");
-        user = address(0x6CA6d1e2D5347Bfab1d91e883F1915560e09129D);
+        gasPayer = makeAddr("gasPayer");
     }
 
     // Test function to verify users can claim their tokens
@@ -58,10 +61,13 @@ contract MerkleAirDropIntegrationsTest is ZkSyncChainChecker, Test {
         // Get the user's initial token balance
         uint256 startingBalance = token.balanceOf(user);
 
-        // Impersonate the user address for the next transaction
-        vm.prank(user);
+        bytes32 digest = airdrop.getMessageHash(user, AMOUNT_TO_CLAIM);
+
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(userPrivateKey, digest);
+
+        vm.prank(gasPayer);
         // Attempt to claim tokens with the user's address, amount, and merkle proof
-        airdrop.claim(user, AMOUNT_TO_CLAIM, PROOF);
+        airdrop.claim(user, AMOUNT_TO_CLAIM, PROOF, v, r, s);
 
         // Get the user's final token balance
         uint256 endingBalance = token.balanceOf(user);
