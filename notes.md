@@ -1,6 +1,7 @@
 # Notes 
 
 ## Glossary
+```
 
 Search for the Department Names with `ctrl + F`:
 
@@ -41,6 +42,11 @@ Getting Started Notes
         - What is a Merkle Proof?
         - Benefits
     - Signatures Notes
+        - EIP-191 Notes
+        - EIP-712 Notes (Recommended)
+        - OpenZeppelin Signature Notes
+        - ECDSA Signatures
+    
 
 Package Installing Notes
 
@@ -130,7 +136,7 @@ DeFi Notes
     - Different Categories/Properties of StableCoins
 
 Keyboard Shortcuts
-
+```
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 ## Getting Started Notes
@@ -1676,7 +1682,30 @@ contract SignatureVerifier {
 }
 ```
 
+#### ECDSA Signatures
 
+ECDSA = Elliptic Curve Digital Signature Algorithm
+
+ECDSA is based on Elliptic Curve Cryptography.
+
+ECDSA is used to:
+    - Generate key pairs
+    - Create Signatures
+    - Verify Signatures
+
+The specific curve used in ECDSA in ethereum is the Secp256k1 curve, and it was chosen for its interoperability with bitcoin, its effciency and its security
+
+##### What are signatures? 
+
+Blockchain signatures:
+    - Provide authentication in blockchain technology
+    - Verify that the message/transaction originates from the intended sender
+
+Proof of ownership in Ethereum is achieved using public and private key pairs and they are used to create digitial signatures.
+
+    Signatures are analogous(similar/comparable/parallel) to having to provide ID to withdraw from the bank. They are kind of like a digital finger print, adn they are unique to you, the user.
+
+    This public private key pair is used to verify that the sender is the owner of the account, this is known as public key cryptography and involves asymmetric encryption.
 
 
 
@@ -5700,6 +5729,7 @@ In a decentralized world, we need a decentralized money. Assets like Ethereum wo
  Here is an example of a chart comparing collateral type vs stability mechanism.
  Governed vs Algorithmic on the y axis, and Exogenous(anchored) vs Endogenous(reflexive) on the x axis: 
      ![alt text](image.png)
+     This image can be found at ` https://github.com/SquilliamX/Foundry-Defi-Stablecoin-f23/raw/main/image.png `
 
      Most Fiat collateralized stablecoin almost all fall into the governed/dumb section (lol) since they are dealing with fiat currency and you need a centralized entity to onboard that fiat to the blockchain.
 
@@ -5717,39 +5747,74 @@ You can learn more at ` https://updraft.cyfrin.io/courses/advanced-foundry/devel
 ## Keyboard Shortcuts
 
 `ctrl` + `a` = select everything
+
 `ctrl` + `b` = open left side bar
+
 `ctrl` + `c` = copy
+
 `ctrl` + `k`(in terminal) = clears terminal (VSCode)
+
 `ctrl` + `l` = open AI chat 
+
 `ctrl` + `n` = new tab
+
 `ctrl` + `p` = command pallet
+
 `ctrl` + `s` = save file
+
 `ctrl` + `v` = paste
+
 `ctrl` + `w` = closes currently active/focused tab
+
 `ctrl` + `y` = redo
+
 `ctrl` + `z` = undo
+
 `ctrl` + `/` = commenting out a line
+
 `ctrl` + ` = toggle terminal
+
 `ctrl` + `shift` + `t` = reopen the last closed tab
+
 `ctrl` + `shift` + `v` = paste without formating
+
 `ctrl` + <arrowKey> = move cursor to next word
+
 `ctrl` + `shift` + (←/→)<arrowKey> = select word by word
+
 `ctrl` + `shift` + (↑/↓)<arrowKey> = select line by line
+
 `alt` + (←/→)(<arrowKey>) = return to previous line in code
+
 `alt` + (↑/↓)<arrowKey> = move lines of code up or down
+
 `ctrl` + `alt` + (↑/↓)<arrowKey> = new cursor to edit many code lines simultaneously
+
 `crtl` + `alt` + (←/→)(<arrowKey>) = splitScreen view of code files
+
 `shift` + `alt` + (↑/↓)(<arrowKey>) = duplicate current line  
+
 `shift` + `alt` + (←/→)(<arrowKey>) = expanding or shrinking your text selection blocks
+
 `ctrl` + `shift` + `alt` + (←/→)(<arrowKey>) = selecting letter by letter
+
 `ctrl` + `shift` + `alt` + (↑/↓)(<arrowKey>) = new cursor to edit many code lines simultaneously
+
 `fn` + (←/→)(<arrowKey>) = beginning or end of text
+
 `ctrl` + `fn` + (←/→)(<arrowKey>) = beginning or end of page/file
+
 `ctrl` + `fn` + (↑/↓)(<arrowKey>) = switch through open tabs
+
 `fn` + `alt` + (↑/↓)(<arrowKey>) = scroll up or down
+
 `shift` + `fn` + (↑/↓)(<arrowKey>) = selects 1 page of items above or below
+
 `shift` + `fn` + (←/→)(<arrowKey>) = select everything on current line from cursor position.
+
 `ctrl` + `shift` + `fn` + (↑/↓)(<arrowKey>) = moves tab location
+
 `ctrl` + `shift` + `fn` + (←/→)(<arrowKey>) = selects all text to beginning or end from your cursor position.
+
 `ctrl` + `shift` + `alt` + `fn` + (↑/↓)(<arrowKey>) = new cursors created up to 1 page above or below
 
