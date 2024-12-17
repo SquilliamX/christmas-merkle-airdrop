@@ -2,16 +2,22 @@
 
 pragma solidity 0.8.24;
 
+// Import required contracts and libraries
 import { ChristmasToken } from "./ChristmasToken.sol";
 import { IERC20, SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { MerkleProof } from "@openzeppelin/contracts/utils/cryptography/MerkleProof.sol";
+import { EIP712 } from "@openzeppelin/contracts/utils/cryptography/EIP712.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
-contract MerkleAirdrop {
+// Contract inherits from EIP712 for structured data signing
+contract MerkleAirdrop is EIP712 {
     // we can call all the functions from the library SafeERC20 for all variables that are of type IERC20
     using SafeERC20 for IERC20;
 
+    // Custom error definitions for reverting with specific failure reasons
     error MerkleAirdrop__InvalidProof();
     error MerkleAirdrop__AlreadyClaimed();
+    error MerkleAirdrop__InvalidSignature();
 
     /// @notice The root hash of the merkle tree, immutable once set
     /// @dev Used to verify the validity of claims against the merkle proof
@@ -24,6 +30,15 @@ contract MerkleAirdrop {
     // mapping to identify whether an address has claimed or not
     mapping(address claimer => bool claimed) private s_hasClaimed;
 
+    // Type hash constant for EIP712 structured data signing
+    bytes32 private constant MESSAGE_TYPEHASH = keccak256("AirdropClaim(address account, uint256 amount)");
+
+    // Struct defining the structure of an airdrop claim
+    struct AirdropClaim {
+        address account;
+        uint256 amount;
+    }
+
     // Event emitted when someone successfully claims their airdrop tokens
     // @param account The address of the claimer
     // @param amount The amount of tokens claimed
@@ -32,7 +47,7 @@ contract MerkleAirdrop {
     /// @notice Constructor initializes the contract with merkle root and token address
     /// @param merkleRoot The root hash of the merkle tree containing all valid claims
     /// @param airdropToken The ERC20 token contract address that will be airdropped
-    constructor(bytes32 merkleRoot, IERC20 airdropToken) {
+    constructor(bytes32 merkleRoot, IERC20 airdropToken) EIP712("MerkleAirdrop", "1") {
         i_merkleRoot = merkleRoot;
         i_airdropToken = airdropToken;
     }
@@ -41,10 +56,23 @@ contract MerkleAirdrop {
     /// @param account The address that will receive the tokens
     /// @param amount The amount of tokens to be claimed
     /// @param merkleProof Array of hashes that proves the claim is valid
-    function claim(address account, uint256 amount, bytes32[] calldata merkleProof) external {
+    function claim(
+        address account, // Address that will receive tokens
+        uint256 amount, // Amount of tokens to be claimed
+        bytes32[] calldata merkleProof, // Proof of inclusion in merkle tree
+        uint8 v, // Recovery byte of the signature
+        bytes32 r, // First 32 bytes of the signature
+        bytes32 s // Last 32 bytes of the signature
+    )
+        external
+    {
         // Check if the account has already claimed their tokens
         if (s_hasClaimed[account] == true) {
             revert MerkleAirdrop__AlreadyClaimed();
+        }
+
+        if (!_isValidSignature(account, getMessageHash(account, amount), v, r, s)) {
+            revert MerkleAirdrop__InvalidSignature();
         }
 
         // encode the account and the amount together, then hashed the encoded value.
@@ -71,6 +99,14 @@ contract MerkleAirdrop {
         i_airdropToken.safeTransfer(account, amount);
     }
 
+    // Returns the EIP712 typed data hash for a claim
+    function getMessageHash(address account, uint256 amount) public view returns (bytes32) {
+        // Create and return the typed data hash using EIP712 standard
+        return _hashTypedDataV4(
+            keccak256(abi.encode(MESSAGE_TYPEHASH, AirdropClaim({ account: account, amount: amount })))
+        );
+    }
+
     /// @notice Getter function to retrieve the merkle root hash
     /// @dev This value is immutable and set during contract deployment
     /// @return bytes32 The merkle root hash used for verification
@@ -83,5 +119,23 @@ contract MerkleAirdrop {
     /// @return IERC20 The ERC20 token contract being distributed
     function getAirdropToken() external view returns (IERC20) {
         return i_airdropToken;
+    }
+
+    // Validates if the signature was created by the claiming account
+    function _isValidSignature(
+        address account, // Address that should have signed the message
+        bytes32 digest, // Hash of the data that was signed
+        uint8 v, // Recovery byte of the signature
+        bytes32 r, // First 32 bytes of the signature
+        bytes32 s // Last 32 bytes of the signature
+    )
+        internal
+        pure
+        returns (bool)
+    {
+        // Attempt to recover the signer's address from the signature
+        (address actualSigner,,) = ECDSA.tryRecover(digest, v, r, s);
+        // Return true if the recovered signer matches the expected account
+        return actualSigner == account;
     }
 }
