@@ -15,9 +15,9 @@ contract MerkleAirdrop is EIP712 {
     using SafeERC20 for IERC20;
 
     // Custom error definitions for reverting with specific failure reasons
-    error MerkleAirdrop__InvalidProof();
-    error MerkleAirdrop__AlreadyClaimed();
-    error MerkleAirdrop__InvalidSignature();
+    error MerkleAirdrop__InvalidProof(); // Thrown when the merkle proof verification fails
+    error MerkleAirdrop__AlreadyClaimed(); // Thrown when an address attempts to claim twice
+    error MerkleAirdrop__InvalidSignature(); // Thrown when the signature verification fails
 
     /// @notice The root hash of the merkle tree, immutable once set
     /// @dev Used to verify the validity of claims against the merkle proof
@@ -27,16 +27,16 @@ contract MerkleAirdrop is EIP712 {
     /// @dev Immutable to ensure the token address cannot be changed after deployment
     IERC20 private immutable i_airdropToken;
 
-    // mapping to identify whether an address has claimed or not
+    // Mapping to track which addresses have already claimed their tokens
     mapping(address claimer => bool claimed) private s_hasClaimed;
 
-    // Type hash constant for EIP712 structured data signing
-    bytes32 private constant MESSAGE_TYPEHASH = keccak256("AirdropClaim(address account, uint256 amount)");
+    // EIP712 type hash for the structured data signing
+    bytes32 private constant MESSAGE_TYPEHASH = keccak256("AirdropClaim(address account,uint256 amount)");
 
-    // Struct defining the structure of an airdrop claim
+    // Struct defining the data structure for an airdrop claim
     struct AirdropClaim {
-        address account;
-        uint256 amount;
+        address account; // Address that will receive the tokens
+        uint256 amount; // Amount of tokens to be claimed
     }
 
     // Event emitted when someone successfully claims their airdrop tokens
@@ -48,8 +48,8 @@ contract MerkleAirdrop is EIP712 {
     /// @param merkleRoot The root hash of the merkle tree containing all valid claims
     /// @param airdropToken The ERC20 token contract address that will be airdropped
     constructor(bytes32 merkleRoot, IERC20 airdropToken) EIP712("MerkleAirdrop", "1") {
-        i_merkleRoot = merkleRoot;
-        i_airdropToken = airdropToken;
+        i_merkleRoot = merkleRoot; // Store the merkle root
+        i_airdropToken = airdropToken; // Store the token contract address
     }
 
     /// @notice Allows users to claim their airdrop tokens if they have a valid proof
@@ -71,6 +71,7 @@ contract MerkleAirdrop is EIP712 {
             revert MerkleAirdrop__AlreadyClaimed();
         }
 
+        // Verify the signature matches the claiming account
         if (!_isValidSignature(account, getMessageHash(account, amount), v, r, s)) {
             revert MerkleAirdrop__InvalidSignature();
         }
@@ -94,8 +95,10 @@ contract MerkleAirdrop is EIP712 {
         }
         // update the mapping for users that have claimed before we send tokens to prevent reentrancy
         s_hasClaimed[account] = true;
-        // before we send tokens we want to emit event
+        // emit event before we send tokens
         emit Claim(account, amount);
+
+        // Transfer the tokens to the claiming account
         i_airdropToken.safeTransfer(account, amount);
     }
 
@@ -108,14 +111,12 @@ contract MerkleAirdrop is EIP712 {
     }
 
     /// @notice Getter function to retrieve the merkle root hash
-    /// @dev This value is immutable and set during contract deployment
     /// @return bytes32 The merkle root hash used for verification
     function getMerkleRoot() external view returns (bytes32) {
         return i_merkleRoot;
     }
 
     /// @notice Getter function to retrieve the airdrop token contract address
-    /// @dev This value is immutable and set during contract deployment
     /// @return IERC20 The ERC20 token contract being distributed
     function getAirdropToken() external view returns (IERC20) {
         return i_airdropToken;
@@ -133,7 +134,7 @@ contract MerkleAirdrop is EIP712 {
         pure
         returns (bool)
     {
-        // Attempt to recover the signer's address from the signature
+        // Recover the signer's address from the signature components
         (address actualSigner,,) = ECDSA.tryRecover(digest, v, r, s);
         // Return true if the recovered signer matches the expected account
         return actualSigner == account;
