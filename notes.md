@@ -89,6 +89,7 @@ DEPLOYING PRODUCTION CONTRACT Notes
 How to interact with deployed contracts from the command line Notes
     - CAST SIG NOTES
     - cast --calldata-decode Notes
+    - cast wallet sign Notes
     - How to be safe when interacting with contracts
 
 TIPS AND TRICKS
@@ -1310,6 +1311,8 @@ If we had a dynamic array that can grow indefintely, looping through every item 
 Essentially, merkle proofs allow us to prove that some piece of data is in fact in a group of data. 
 Example:
     If we have a group of data, like a group of addresses with an allowed amount, is my address in that group of addresses? Merkle Proofs enable us to do this, and Merkel Proofs come from Merkel Trees, and Merkel tress are the data strcuture that is used here
+
+You can learn more about Merkle Trees at `https://updraft.cyfrin.io/courses/advanced-foundry/merkle-airdrop/merkle-proofs `. This section of the cyfrin course goes over Merkle Trees & proofs, signatures and ECDSA(v, r, s).
     
 #### What is a Merkle Tree?
 Merkle trees are a data structure in computer science. Merkle trees are used to encrypt blockchain data more securely and efficiently. It was invented by Ralph Merkle in 1979. Ralph Merkle also happens to be one of the inventors of public key cryptography!
@@ -1404,15 +1407,422 @@ A merkle Proof is a way for someone to prove that some data is on one of the Mer
 
 #### Using a Merkle Tree & Proofs Example
 
+The following example is from `merkle-airdrop`. https://github.com/SquilliamX/christmas-merkle-airdrop
+
+GenerateInput.s.sol:
+This script generates the input JSON file for the Merkle tree.
+    - Creates a list of addresses and amounts
+    - Writes them to input.json
 ```js
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { Script } from "forge-std/Script.sol";
+import { stdJson } from "forge-std/StdJson.sol";
+import { console } from "forge-std/console.sol";
+
+// Merkle tree input file generator script
+contract GenerateInput is Script {
+    uint256 private constant AMOUNT = 25 * 1e18;
+    string[] types = new string[](2);
+    uint256 count;
+    string[] whitelist = new string[](4);
+    string private constant INPUT_PATH = "/script/target/input.json";
+
+    function run() public {
+        types[0] = "address";
+        types[1] = "uint";
+        whitelist[0] = "0x6CA6d1e2D5347Bfab1d91e883F1915560e09129D";
+        whitelist[1] = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+        whitelist[2] = "0x2ea3970Ed82D5b30be821FAAD4a731D35964F7dd";
+        whitelist[3] = "0xf6dBa02C01AF48Cf926579F77C9f874Ca640D91D";
+        count = whitelist.length;
+        string memory input = _createJSON();
+        // write to the output file the stringified output json tree dumpus
+        vm.writeFile(string.concat(vm.projectRoot(), INPUT_PATH), input);
+
+        console.log("DONE: The output is found at %s", INPUT_PATH);
+    }
+
+    function _createJSON() internal view returns (string memory) {
+        string memory countString = vm.toString(count); // convert count to string
+        string memory amountString = vm.toString(AMOUNT); // convert amount to string
+        string memory json = string.concat('{ "types": ["address", "uint"], "count":', countString, ',"values": {');
+        for (uint256 i = 0; i < whitelist.length; i++) {
+            if (i == whitelist.length - 1) {
+                json = string.concat(
+                    json,
+                    '"',
+                    vm.toString(i),
+                    '"',
+                    ': { "0":',
+                    '"',
+                    whitelist[i],
+                    '"',
+                    ', "1":',
+                    '"',
+                    amountString,
+                    '"',
+                    " }"
+                );
+            } else {
+                json = string.concat(
+                    json,
+                    '"',
+                    vm.toString(i),
+                    '"',
+                    ': { "0":',
+                    '"',
+                    whitelist[i],
+                    '"',
+                    ', "1":',
+                    '"',
+                    amountString,
+                    '"',
+                    " },"
+                );
+            }
+        }
+        json = string.concat(json, "} }");
+
+        return json;
+    }
+}
 
 ```
+
+
+MakeMerkle.s.sol:
+This script takes the input JSON and generates the Merkle proofs:
+    - Reads input.json
+    - Creates leaf nodes by hashing address+amount pairs
+    - Generates Merkle proofs for each leaf
+    - Writes proofs to output.json
+```js
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { Script } from "forge-std/Script.sol";
+import { stdJson } from "forge-std/StdJson.sol";
+import { console } from "forge-std/console.sol";
+import { Merkle } from "murky/src/Merkle.sol";
+import { ScriptHelper } from "murky/script/common/ScriptHelper.sol";
+
+// Merkle proof generator script
+// To use:
+// 1. Run `forge script script/GenerateInput.s.sol` to generate the input file
+// 2. Run `forge script script/Merkle.s.sol`
+// 3. The output file will be generated in /script/target/output.json
+
+/**
+ * @title MakeMerkle
+ * @author Squilliam
+ *
+ * Original Work by:
+ * @author kootsZhin
+ * @notice https://github.com/dmfxyz/murky
+ */
+contract MakeMerkle is Script, ScriptHelper {
+    using stdJson for string; // enables us to use the json cheatcodes for strings
+
+    Merkle private m = new Merkle(); // instance of the merkle contract from Murky to do shit
+
+    string private inputPath = "/script/target/input.json";
+    string private outputPath = "/script/target/output.json";
+
+    string private elements = vm.readFile(string.concat(vm.projectRoot(), inputPath)); // get the absolute path
+    string[] private types = elements.readStringArray(".types"); // gets the merkle tree leaf types from json using
+        // forge standard lib cheatcode
+    uint256 private count = elements.readUint(".count"); // get the number of leaf nodes
+
+    // make three arrays the same size as the number of leaf nodes
+    bytes32[] private leafs = new bytes32[](count);
+
+    string[] private inputs = new string[](count);
+    string[] private outputs = new string[](count);
+
+    string private output;
+
+    /// @dev Returns the JSON path of the input file
+    // output file output ".values.some-address.some-amount"
+    function getValuesByIndex(uint256 i, uint256 j) internal pure returns (string memory) {
+        return string.concat(".values.", vm.toString(i), ".", vm.toString(j));
+    }
+
+    /// @dev Generate the JSON entries for the output file
+    function generateJsonEntries(
+        string memory _inputs,
+        string memory _proof,
+        string memory _root,
+        string memory _leaf
+    )
+        internal
+        pure
+        returns (string memory)
+    {
+        string memory result = string.concat(
+            "{",
+            "\"inputs\":",
+            _inputs,
+            ",",
+            "\"proof\":",
+            _proof,
+            ",",
+            "\"root\":\"",
+            _root,
+            "\",",
+            "\"leaf\":\"",
+            _leaf,
+            "\"",
+            "}"
+        );
+
+        return result;
+    }
+
+    /// @dev Read the input file and generate the Merkle proof, then write the output file
+    function run() public {
+        console.log("Generating Merkle Proof for %s", inputPath);
+
+        for (uint256 i = 0; i < count; ++i) {
+            string[] memory input = new string[](types.length); // stringified data (address and string both as strings)
+            bytes32[] memory data = new bytes32[](types.length); // actual data as a bytes32
+
+            for (uint256 j = 0; j < types.length; ++j) {
+                if (compareStrings(types[j], "address")) {
+                    address value = elements.readAddress(getValuesByIndex(i, j));
+                    // you can't immediately cast straight to 32 bytes as an address is 20 bytes so first cast to
+                    // uint160 (20 bytes) cast up to uint256 which is 32 bytes and finally to bytes32
+                    data[j] = bytes32(uint256(uint160(value)));
+                    input[j] = vm.toString(value);
+                } else if (compareStrings(types[j], "uint")) {
+                    uint256 value = vm.parseUint(elements.readString(getValuesByIndex(i, j)));
+                    data[j] = bytes32(value);
+                    input[j] = vm.toString(value);
+                }
+            }
+            // Create the hash for the merkle tree leaf node
+            // abi encode the data array (each element is a bytes32 representation for the address and the amount)
+            // Helper from Murky (ltrim64) Returns the bytes with the first 64 bytes removed
+            // ltrim64 removes the offset and length from the encoded bytes. There is an offset because the array
+            // is declared in memory
+            // hash the encoded address and amount
+            // bytes.concat turns from bytes32 to bytes
+            // hash again because preimage attack
+            leafs[i] = keccak256(bytes.concat(keccak256(ltrim64(abi.encode(data)))));
+            // Converts a string array into a JSON array string.
+            // store the corresponding values/inputs for each leaf node
+            inputs[i] = stringArrayToString(input);
+        }
+
+        for (uint256 i = 0; i < count; ++i) {
+            // get proof gets the nodes needed for the proof & strigify (from helper lib)
+            string memory proof = bytes32ArrayToString(m.getProof(leafs, i));
+            // get the root hash and stringify
+            string memory root = vm.toString(m.getRoot(leafs));
+            // get the specific leaf working on
+            string memory leaf = vm.toString(leafs[i]);
+            // get the singified input (address, amount)
+            string memory input = inputs[i];
+
+            // generate the Json output file (tree dump)
+            outputs[i] = generateJsonEntries(input, proof, root, leaf);
+        }
+
+        // stringify the array of strings to a single string
+        output = stringArrayToArrayString(outputs);
+        // write to the output file the stringified output json tree dumpus
+        vm.writeFile(string.concat(vm.projectRoot(), outputPath), output);
+
+        console.log("DONE: The output is found at %s", outputPath);
+    }
+}
+
+```
+
+
+
+
+MerkleAirdrop.sol
+```js
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { Script } from "forge-std/Script.sol";
+import { stdJson } from "forge-std/StdJson.sol";
+import { console } from "forge-std/console.sol";
+import { Merkle } from "murky/src/Merkle.sol";
+import { ScriptHelper } from "murky/script/common/ScriptHelper.sol";
+
+// Merkle proof generator script
+// To use:
+// 1. Run `forge script script/GenerateInput.s.sol` to generate the input file
+// 2. Run `forge script script/Merkle.s.sol`
+// 3. The output file will be generated in /script/target/output.json
+
+/**
+ * @title MakeMerkle
+ * @author Squilliam
+ *
+ * Original Work by:
+ * @author kootsZhin
+ * @notice https://github.com/dmfxyz/murky
+ */
+contract MakeMerkle is Script, ScriptHelper {
+    using stdJson for string; // enables us to use the json cheatcodes for strings
+
+    Merkle private m = new Merkle(); // instance of the merkle contract from Murky to do shit
+
+    string private inputPath = "/script/target/input.json";
+    string private outputPath = "/script/target/output.json";
+
+    string private elements = vm.readFile(string.concat(vm.projectRoot(), inputPath)); // get the absolute path
+    string[] private types = elements.readStringArray(".types"); // gets the merkle tree leaf types from json using
+        // forge standard lib cheatcode
+    uint256 private count = elements.readUint(".count"); // get the number of leaf nodes
+
+    // make three arrays the same size as the number of leaf nodes
+    bytes32[] private leafs = new bytes32[](count);
+
+    string[] private inputs = new string[](count);
+    string[] private outputs = new string[](count);
+
+    string private output;
+
+    /// @dev Returns the JSON path of the input file
+    // output file output ".values.some-address.some-amount"
+    function getValuesByIndex(uint256 i, uint256 j) internal pure returns (string memory) {
+        return string.concat(".values.", vm.toString(i), ".", vm.toString(j));
+    }
+
+    /// @dev Generate the JSON entries for the output file
+    function generateJsonEntries(
+        string memory _inputs,
+        string memory _proof,
+        string memory _root,
+        string memory _leaf
+    )
+        internal
+        pure
+        returns (string memory)
+    {
+        string memory result = string.concat(
+            "{",
+            "\"inputs\":",
+            _inputs,
+            ",",
+            "\"proof\":",
+            _proof,
+            ",",
+            "\"root\":\"",
+            _root,
+            "\",",
+            "\"leaf\":\"",
+            _leaf,
+            "\"",
+            "}"
+        );
+
+        return result;
+    }
+
+    /// @dev Read the input file and generate the Merkle proof, then write the output file
+    function run() public {
+        console.log("Generating Merkle Proof for %s", inputPath);
+
+        for (uint256 i = 0; i < count; ++i) {
+            string[] memory input = new string[](types.length); // stringified data (address and string both as strings)
+            bytes32[] memory data = new bytes32[](types.length); // actual data as a bytes32
+
+            for (uint256 j = 0; j < types.length; ++j) {
+                if (compareStrings(types[j], "address")) {
+                    address value = elements.readAddress(getValuesByIndex(i, j));
+                    // you can't immediately cast straight to 32 bytes as an address is 20 bytes so first cast to
+                    // uint160 (20 bytes) cast up to uint256 which is 32 bytes and finally to bytes32
+                    data[j] = bytes32(uint256(uint160(value)));
+                    input[j] = vm.toString(value);
+                } else if (compareStrings(types[j], "uint")) {
+                    uint256 value = vm.parseUint(elements.readString(getValuesByIndex(i, j)));
+                    data[j] = bytes32(value);
+                    input[j] = vm.toString(value);
+                }
+            }
+            // Create the hash for the merkle tree leaf node
+            // abi encode the data array (each element is a bytes32 representation for the address and the amount)
+            // Helper from Murky (ltrim64) Returns the bytes with the first 64 bytes removed
+            // ltrim64 removes the offset and length from the encoded bytes. There is an offset because the array
+            // is declared in memory
+            // hash the encoded address and amount
+            // bytes.concat turns from bytes32 to bytes
+            // hash again because preimage attack
+            leafs[i] = keccak256(bytes.concat(keccak256(ltrim64(abi.encode(data)))));
+            // Converts a string array into a JSON array string.
+            // store the corresponding values/inputs for each leaf node
+            inputs[i] = stringArrayToString(input);
+        }
+
+        for (uint256 i = 0; i < count; ++i) {
+            // get proof gets the nodes needed for the proof & strigify (from helper lib)
+            string memory proof = bytes32ArrayToString(m.getProof(leafs, i));
+            // get the root hash and stringify
+            string memory root = vm.toString(m.getRoot(leafs));
+            // get the specific leaf working on
+            string memory leaf = vm.toString(leafs[i]);
+            // get the singified input (address, amount)
+            string memory input = inputs[i];
+
+            // generate the Json output file (tree dump)
+            outputs[i] = generateJsonEntries(input, proof, root, leaf);
+        }
+
+        // stringify the array of strings to a single string
+        output = stringArrayToArrayString(outputs);
+        // write to the output file the stringified output json tree dumpus
+        vm.writeFile(string.concat(vm.projectRoot(), outputPath), output);
+
+        console.log("DONE: The output is found at %s", outputPath);
+    }
+}
+
+```
+
+
+To summarize:
+1. GenerateInput.s.sol creates the initial data.
+2. MakeMerkle.s.sol processes this data.
+3. MerkleAirdrop.sol uses this data.
+
+The flow works like this:
+1. GenerateInput.s.sol creates list of who gets what
+2. MakeMerkle.s.sol:
+    - Creates a Merkle tree from this list
+    - Generates one root hash
+    - Generates unique proofs for each address
+3. MerkleAirdrop.sol:
+    - Stores only the root hash on-chain
+    - When someone claims:
+        - They provide their proof (from output.json)
+        - Contract verifies their proof matches the root
+        - If valid, they get their tokens
+
+This is efficient because:
+    - Only one hash (the root) needs to be stored on-chain
+    - Each user can prove they're on the list without the contract needing to store the full list
+    - The proofs can be distributed off-chain (via output.json)
+    - The Merkle tree structure makes it cryptographically impossible to:
+    - Claim if you're not on the list
+    - Claim more than your allocated amount
+    - Claim on behalf of someone else (due to signatures)
+
+
 
 Note: What is the significance of hashing a leaf node twice before verification?
 
     Answer: Hashing twice helps mitigate second preimage attacks, which could allow someone to create a different input that generates the same hash, potentially leading to unauthorized token claims.
 
 ### Signatures Notes
+
+Note: You can learn more about Signatures at `https://updraft.cyfrin.io/courses/advanced-foundry/merkle-airdrop/signature-standards `. This section of the cyfrin course goes over Merkle Trees & proofs, signatures and ECDSA(v, r, s).
 
 In order to understand signature creation, signature verification and preventing replay attacks, EIP-191 and EIP-712 must be understood first:
 
@@ -1683,6 +2093,8 @@ contract SignatureVerifier {
 ```
 
 #### ECDSA Signatures
+
+Note: You can learn more about Signatures at ` https://updraft.cyfrin.io/courses/advanced-foundry/merkle-airdrop/ecdsa-signatures `. This section of the cyfrin course goes over Merkle Trees & proofs, signatures and ECDSA(v, r, s).
 
 ECDSA = Elliptic Curve Digital Signature Algorithm
 
@@ -3605,6 +4017,39 @@ example:
 
 This will return what values are being passed in this transaction for the parameters.
 
+
+### cast wallet sign Notes
+
+`cast wallet sign` is a Foundry command that creates digital signatures. Here's a general explanation:
+Think of cast wallet sign like a digital version of signing a physical document:
+`cast wallet sign <message> --private-key <your-private-key>` for anvil
+`cast wallet sign <message> --account <account-Name> --sender <account-public-address> ` for testnet/mainnet
+
+What it does:
+1. Takes a message (usually a hash) that you want to sign
+2. Uses your private key (like your unique signing ability)
+3. Produces a cryptographic signature that:
+    - Proves YOU signed this specific message
+    - Can be verified by anyone, but only created by you
+    - Cannot be forged without your private key
+    - Cannot be reused for other messages
+
+Common flags:
+`--no-hash` : Sign the exact message bytes (without hashing first).
+example: `cast wallet sign --no-hash <message> --account <account-Name> --sender <account-public-address>`
+
+Real-world analogy:
+    - Message = The document you're signing
+    - Private key = Your ability to sign
+    - Signature = Your actual signature
+    - Anyone can verify your signature (public), but only you can create it (private)
+
+This is commonly used in blockchain for:
+    - Proving ownership of an address
+    - Authorizing transactions
+    - Signing messages off-chain
+    - Creating meta-transactions
+The signature can later be verified on-chain using functions like `ECDSA.recover()` to prove that the owner of a specific address authorized something.
 
 
 
