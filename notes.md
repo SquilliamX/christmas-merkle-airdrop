@@ -36,6 +36,7 @@ Getting Started Notes
     - abi.encode Notes & abi.encodePacked Notes
     - How to use abi.encode and abi.decode Notes
     - Function Selector & Function Signature Notes
+    - Delegatecall Notes
     - Merkle Tree & Merkle Proof Notes
         - What is a Merkle Tree?
         - Structure / How Merkle Tree Works
@@ -1299,6 +1300,77 @@ if you want to interact with an outside contract from within a contract, its bes
 
 If you want more information, you can find it at ` https://updraft.cyfrin.io/courses/advanced-foundry/how-to-create-an-NFT-collection/evm-signatures-selectors ` - This video also goes over how to call any contracts/function even without having an interface
 
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+### Delegatecall Notes
+
+https://solidity-by-example.org/delegatecall/
+
+`delegatecall` is a low level function similar to `call`.
+
+When contract A executes `delegatecall` to contract B, B's code is executed with contract A's storage, `msg.sender` and `msg.value`.
+example:
+```js
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.26;
+
+// NOTE: Deploy this contract first
+contract B {
+    // NOTE: storage layout must be the same as contract A
+    uint256 public num;
+    address public sender;
+    uint256 public value;
+
+    function setVars(uint256 _num) public payable {
+        num = _num;
+        sender = msg.sender;
+        value = msg.value;
+    }
+}
+
+contract A {
+    uint256 public num;
+    address public sender;
+    uint256 public value;
+
+    event DelegateResponse(bool success, bytes data);
+
+    function setVars(address _contract, uint256 _num) public payable {
+        // A's storage is set, B is not modified.
+        (bool success, bytes memory data) = _contract.delegatecall(
+            abi.encodeWithSignature("setVars(uint256)", _num)
+        );
+
+        emit DelegateResponse(success, data);
+    }
+}
+
+```
+
+Note: in the example above, contract A has the same variable names are contract B, but this is not needed. Contract A could have it's variables named:  
+```js
+    uint256 public food;
+    address public drinks;
+    uint256 public dessert;
+```
+and the delegate call function would still work. `delegatecall` allows us to borrow functions and transposes the function logic to the storage location equivalence. `delegatecall` does not copy the storage values, `delegatecall` only copies the function logic, and whatever values are updated in the `delegatecall` function will be saved in the storage location equivalence. So in the example above, if `setVars` is called in contract A, it calls `delegatecall`, takes a contract address and a number paramter, this uint256 will be saved in the variable `food` since that is the storage location equivalence. The contract address is needed in the `delegatecall` so it knows which contract to point to, to copy its function logic in the function signature of "setVars(uint256)" within the contract that is passed.
+
+Also, in the example above, even if we did not have any variables in contract A, storage slot 00 and storage slot 01 would still get updated (the first two storage slots, it starts counting at 00).
+
+Also, in the example above, in contract A, if we change the variables to:
+```js
+    bool public food; // changed this to a bool
+    address public drinks;
+    uint256 public dessert;
+```
+the delegatecall function will still work, it's just setting the storage slot of the boolean to a number and when solidity reads it, it goes "well the storage location equivalence here is storage slot 00 and this storage slot is a boolean" And if this storage slot gets updated to anyting other than zero, it will be `true`; and if its a 0, it will return `false`.
 
 
 
